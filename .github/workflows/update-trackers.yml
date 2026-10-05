@@ -1,0 +1,52 @@
+name: 更新 Tracker 列表
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+      timezone: Asia/Shanghai
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-trackers
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: 安装依赖
+        run: python -m pip install --disable-pip-version-check --requirement requirements.txt
+
+      - name: 生成 Tracker 列表
+        id: generate
+        run: python main.py
+
+      - name: 提交更新结果
+        shell: bash
+        env:
+          FAILED_COUNT: ${{ steps.generate.outputs.failed_count }}
+        run: |
+          set -euo pipefail
+          run_date="$(TZ=Asia/Shanghai date '+%Y-%m-%d')"
+          git add -f output/trackers_list_comma.txt \
+            output/trackers_list_newline.txt \
+            output/trackers_list_blankline.txt
+          if git diff --cached --quiet; then
+            echo "Tracker 列表没有变化。"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: 更新 Tracker 列表（${run_date}，失败源：${FAILED_COUNT:-0}）"
+          git push
